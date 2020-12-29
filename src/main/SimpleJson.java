@@ -4,14 +4,13 @@
 * There is no error handling and everything is packed inside a single java file.
 * Prefer to main function for examples usage.
 * 
-* @author SASANQUA
-* @since  29-12-2020
  */
 
 package main;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +48,7 @@ public class SimpleJson {
 		final Object literal;
 		final int line;
 		
-		public Token(TType type, String lexeme, Object literal, int line) {
+		private Token(TType type, String lexeme, Object literal, int line) {
 			this.type = type;
 			this.lexeme = lexeme;
 			this.literal = literal;
@@ -77,7 +76,7 @@ public class SimpleJson {
 			keywords.put("false", TType.FALSE);
 		}
 		
-		public static Scanner getScanner(String source) {
+		private static Scanner getScanner(String source) {
 			return new Scanner(source);
 		}
 		
@@ -88,7 +87,7 @@ public class SimpleJson {
 			this.tokens = new ArrayList<Token>();
 		}
 		
-		public List<Token> scanTokens() {
+		private List<Token> scanTokens() {
 			while(!isEOF()) {
 				start = current;
 				scanToken();
@@ -170,11 +169,17 @@ public class SimpleJson {
 		private void number() {
 			while(isDigit(peek(0))) advance();
 			
+			boolean isInteger = true;
+			
 			if(peek(0) == NUMBER_SEPERATOR_CHAR && isDigit(peek(1))) {
 				advance();
+				isInteger = false;
 				while(isDigit(peek(0))) advance();
 			}
-			addToken(TType.NUMBER, Double.parseDouble(source.substring(start, current)));
+			Number literal;
+			if(isInteger) literal = Integer.parseInt(source.substring(start, current)); 
+			else literal = Double.parseDouble(source.substring(start, current));
+			addToken(TType.NUMBER, literal);
 		}
 		
 		private void identifier() {
@@ -246,17 +251,17 @@ public class SimpleJson {
 		private Parser() {}
 		
 		private Parser(List<Token> tokens) {
-			this.parent = new HashMap<String, Object>();
+			this.parent = new LinkedHashMap<String, Object>();
 			this.stack = new Stack<Object>();
 			this.tokens = tokens;
 		}
 		
 		
-		public static Parser getParser(List<Token> tokens) {
+		private static Parser getParser(List<Token> tokens) {
 			return new Parser(tokens);
 		}
 		
-		public Map<String, Object> parse() {
+		private Map<String, Object> parse() {
 			if(tokens.size() == 0) return parent;
 			
 			prevToken = tokens.get(0);
@@ -398,8 +403,121 @@ public class SimpleJson {
 		}
 	}
 	
+	private static class Printer {
+		
+		private Map<String, Object> json;
+		private StringBuilder builder;
+		private String indent = "";
+		
+		private Printer() {}
+		
+		private Printer(Map<String, Object> json) {
+			this.json = json;
+			this.builder = new StringBuilder();
+		}
+		
+		private static void print(Map<String, Object> json, int indent) {
+			new Printer(json).print(indent);
+		}
+		
+		private static String serialize(Map<String, Object> json) {
+			return serialize(json, 2);
+		}
+		
+		private static String serialize(Map<String, Object> json, int indent) {
+			Printer p = new Printer(json);
+			for(int i = 0; i < indent; i++) p.indent += " ";
+			p.buildString(json, 1, false);
+			return p.builder.toString();
+		}
+		
+		
+		private void print(int indent) {
+			for(int i = 0; i < indent; i++) this.indent += " ";
+			buildString(json, 1, false);
+			System.out.println(builder.toString());
+		}
+		
+		private void buildString(Map<String, Object> json, int levels, boolean hasNext) {
+			builder.append("{");
+			builder.append("\n");
+			Iterator<String> iter = json.keySet().iterator();
+			while(iter.hasNext()) {
+				String key = iter.next();
+				for(int i = 0; i < levels; i++) {
+					builder.append(this.indent);
+				}
+				Object value = json.get(key);
+				
+				if(value instanceof Map) {
+					builder.append(String.format("\"%s\": ", key));
+					buildString((Map<String, Object>) value, levels + 1, iter.hasNext());
+				}
+				else if(value instanceof List) {
+					buildArrayString((List<Object>) value, levels, key);
+				}
+				else {
+					builder.append(String.format("\"%s\": %s", key, value instanceof String ? "\"" + value.toString() + "\"" : value));
+					if(iter.hasNext()) builder.append(",");
+					builder.append("\n");
+				}
+			}
+			if(levels != 1) {
+				for(int i = 0; i < levels - 1; i++) {
+					builder.append(this.indent);
+				}
+			}
+			builder.append("}");
+			if(hasNext) builder.append(",");
+			builder.append("\n");
+			
+		
+		}
+		
+		private void buildArrayString(List<Object> list, int levels, String key) {
+			if(key == null) builder.append("[");
+			else builder.append(String.format("\"%s\": [", key));
+			builder.append("\n");
+			
+			Iterator<Object> iter = list.iterator();
+			while(iter.hasNext()) {
+				Object item = iter.next();
+				for(int i = 0; i < levels + 1; i++) {
+					builder.append(this.indent);
+				}
+				if(item instanceof List) {
+					buildArrayString((List<Object>) item, levels + 1, null);
+				}else if(item instanceof Map) {
+					buildString((Map<String, Object>) item, levels + 2, iter.hasNext());
+				}else {
+					builder.append(item instanceof String ? "\"" + item.toString() + "\"" : item);
+					if(iter.hasNext()) builder.append(",");
+					builder.append("\n");
+				}
+			}
+			
+			for(int i = 0; i < levels; i++) {
+				builder.append(this.indent);
+			}
+			builder.append("]");
+			builder.append("\n");
+		}
+	}
+	
+	public static void print(Map<String, Object> json) {
+		print(json, 2);
+	}
+	
+	public static void print(Map<String, Object> json, int indent) {
+		Printer.print(json, indent);
+	}
+	
 	public static Map<String, Object> parse(String json) {
 		return Parser.getParser(Scanner.getScanner(json).scanTokens()).parse();	
+	}
+	
+	public static String serialize(Map<String, Object> json) {
+		return Printer.serialize(json);
 	}
 	
 	public static void main(String[] args) {
@@ -419,15 +537,31 @@ public class SimpleJson {
 				"					\"Acronym\": \"SGML\",\r\n" + 
 				"					\"Abbrev\": \"ISO 8879:1986\",\r\n" + 
 				"					\"GlossSee\": \"markup\"\r\n" + 
+				"                },\r\n" + 
+				"                \"GlossEntry2\": {\r\n" + 
+				"                    \"ID\": \"SGML\",\r\n" + 
+				"					\"SortAs\": \"SGML\",\r\n" + 
+				"					\"GlossTerm\": \"Standard Generalized Markup Language\",\r\n" + 
+				"					\"Acronym\": \"SGML\",\r\n" + 
+				"					\"Abbrev\": \"ISO 8879:1986\",\r\n" + 
+				"					\"GlossSee\": \"markup\"\r\n" + 
+				"                },\r\n" + 
+				"                \"GlossEntry3\": {\r\n" + 
+				"                    \"ID\": \"SGML\",\r\n" + 
+				"					\"SortAs\": \"SGML\",\r\n" + 
+				"					\"GlossTerm\": \"Standard Generalized Markup Language\",\r\n" + 
+				"					\"Acronym\": \"SGML\",\r\n" + 
+				"					\"Abbrev\": \"ISO 8879:1986\",\r\n" + 
+				"					\"GlossSee\": \"markup\"\r\n" + 
 				"                }\r\n" + 
 				"            }\r\n" + 
 				"        }\r\n" + 
 				"    }\r\n" + 
 				"}";
-		examples[2] = "{\"name\":\"John\", \"age\": true, \"city\":\"New York\", \"a\": {\"b\": {\"c\": 123, \"e\": [1,2,3,4,5, [5,6,7,8,9, {\"vip\": \"pro\"}, \"hello world\"]]}}}, \"d\": 10";
-		System.out.println(parse(examples[0]));
-		System.out.println(parse(examples[1]));
-		System.out.println(parse(examples[2]));
+		examples[2] = "{\"name\":\"John\", \"age\": true, \"city\":\"New York\", \"a\": {\"b\": {\"c\": 123.123, \"e\": [\"ok bummer\",1,2,3,4,5, [5,6,7,8,9, {\"vip\": \"pro\", \"ok\": [1,2,3, {\"m\": {\"n\": {\"a\": [1,2,3,4,5]}}}]}, \"hello world\"]]}}, \"d\": 10}";
+		//System.out.println(parse(examples[0]));
+		//System.out.println(parse(examples[1]));
+		System.out.println(serialize(parse(examples[2])));
 	}
 	
 }
